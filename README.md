@@ -1,30 +1,17 @@
-Linux kernel
-============
+Raspberry Pi Linux kernel with tweaks for the uConsole and other ClockworkPi cyberdecks by [ak-rex](https://github.com/ak-rex/ClockworkPi-linux) and me
+=======================================================================================================================================================
 
-There are several guides for kernel developers and users. These guides can
-be rendered in a number of formats, like HTML and PDF. Please read
-Documentation/admin-guide/README.rst first.
+This repository is based on the Linux kernel from https://github.com/raspberrypi/linux
 
-In order to build the documentation, use ``make htmldocs`` or
-``make pdfdocs``.  The formatted documentation can also be read online at:
+It includes:
+* Additional drivers for ClockworkPi cyberdecks
+* Overlays by [ak-rex](https://github.com/ak-rex/ClockworkPi-linux)
+* My custom tweaks
 
-    https://www.kernel.org/doc/html/latest/
-
-There are various text files in the Documentation/ subdirectory,
-several of them using the Restructured Text markup notation.
-
-Please read the Documentation/process/changes.rst file, as it contains the
-requirements for building and running the kernel, and information about
-the problems which may result by upgrading your kernel.
-
-Build status for rpi-6.1.y:
-[![Pi kernel build tests](https://github.com/raspberrypi/linux/actions/workflows/kernel-build.yml/badge.svg?branch=rpi-6.1.y)](https://github.com/raspberrypi/linux/actions/workflows/kernel-build.yml)
-[![dtoverlaycheck](https://github.com/raspberrypi/linux/actions/workflows/dtoverlaycheck.yml/badge.svg?branch=rpi-6.1.y)](https://github.com/raspberrypi/linux/actions/workflows/dtoverlaycheck.yml)
-
-Build status for rpi-6.6.y:
-[![Pi kernel build tests](https://github.com/raspberrypi/linux/actions/workflows/kernel-build.yml/badge.svg?branch=rpi-6.6.y)](https://github.com/raspberrypi/linux/actions/workflows/kernel-build.yml)
-[![dtoverlaycheck](https://github.com/raspberrypi/linux/actions/workflows/dtoverlaycheck.yml/badge.svg?branch=rpi-6.6.y)](https://github.com/raspberrypi/linux/actions/workflows/dtoverlaycheck.yml)
-
-Build status for rpi-6.12.y:
-[![Pi kernel build tests](https://github.com/raspberrypi/linux/actions/workflows/kernel-build.yml/badge.svg?branch=rpi-6.12.y)](https://github.com/raspberrypi/linux/actions/workflows/kernel-build.yml)
-[![dtoverlaycheck](https://github.com/raspberrypi/linux/actions/workflows/dtoverlaycheck.yml/badge.svg?branch=rpi-6.12.y)](https://github.com/raspberrypi/linux/actions/workflows/dtoverlaycheck.yml)
+My tweaks:
+* **Updated the ocp8178 backlight driver to provide 21 brightness levels instead of 10**  
+  By default, there are only 10 brightness levels, so the screen can sometimes be too bright or too dark. These 21 levels correspond to a 0%–100% scale in 5% steps.
+* **AXP228 driver tuning and fixes**  
+  Includes calibration fixes, capacity tuning, and removal of the need to hold the power button for a second.
+* **Increased the maximum LIRC IR duration from 500 ms to 2000 ms**  
+  Needed for AC control
