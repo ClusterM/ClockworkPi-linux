@@ -99,7 +99,9 @@
 				voltage-max-design-microvolt = <4200000>;
 				re-charge-voltage-microvolt = <4000000>;
 				voltage-min-design-microvolt = <2900000>;
-				charge-full-design-microamp-hours = <6700000>;
+				/* Capacity: 0 = unset here; set via config.txt (charge_full_design_uah / energy_full_design_uwh) or driver/PMIC */
+				energy-full-design-microwatt-hours = <0>;
+				charge-full-design-microamp-hours = <0>;
 			};
 		};
 	};
