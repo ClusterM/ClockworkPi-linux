@@ -128,15 +128,12 @@ static int ocp8178_update_status(struct backlight_device *bl)
 	struct ocp8178_backlight *gbl = bl_get_data(bl);
 	int brightness = bl->props.brightness, i;
 
-
 	if (bl->props.power != FB_BLANK_UNBLANK ||
 	    bl->props.state & (BL_CORE_SUSPENDED | BL_CORE_FBBLANK))
 		brightness = 0;
 
 	if(brightness > MAX_BRIGHTNESS_VALUE)
 		brightness = MAX_BRIGHTNESS_VALUE;
-
-    printk(KERN_DEBUG "bightness=%d/%d, value=%d\n", brightness, MAX_BRIGHTNESS_VALUE, ocp8178_bl_table[brightness]);
 
 	for(i = 0; i < 2; i++) {
 		entry_1wire_mode(gbl);
