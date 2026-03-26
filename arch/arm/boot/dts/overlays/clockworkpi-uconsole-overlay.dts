@@ -181,11 +181,16 @@
 				re-charge-voltage-microvolt = <4000000>;
 				// adjust the following params according to your battery specs
 				voltage-min-design-microvolt = <3300000>;
-				energy-full-design-microwatt-hours = <24790000>; // 2x3350mAh * 3.7v
-				charge-full-design-microamp-hours = <6700000>; // 2x3350mAh
+				/* Capacity: 0 = unset here; set via config.txt (charge_full_design_uah / energy_full_design_uwh) or driver/PMIC */
+				energy-full-design-microwatt-hours = <0>;
+				charge-full-design-microamp-hours = <0>;
 			};
 		};
 	};
+	__overrides__ {
+		energy_full_design_uwh = <&battery>, "energy-full-design-microwatt-hours:0";
+		charge_full_design_uah = <&battery>, "charge-full-design-microamp-hours:0";
+	};	
 
 	fragment@9 {
 		target=<&dsi1>;
