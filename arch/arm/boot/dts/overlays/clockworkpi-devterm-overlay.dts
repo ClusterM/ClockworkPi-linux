@@ -186,6 +186,10 @@
 			};
 		};
 	};
+	__overrides__ {
+		energy_full_design_uwh = <&battery>, "energy-full-design-microwatt-hours:0";
+		charge_full_design_uah = <&battery>, "charge-full-design-microamp-hours:0";
+	};
 
 	fragment@9 {
 		target=<&dsi1>;

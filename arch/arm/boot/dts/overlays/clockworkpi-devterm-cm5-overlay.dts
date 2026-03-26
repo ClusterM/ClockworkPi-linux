@@ -99,10 +99,13 @@
 				voltage-max-design-microvolt = <4200000>;
 				re-charge-voltage-microvolt = <4000000>;
 				voltage-min-design-microvolt = <2900000>;
-				energy-full-design-microwatt-hours = <24790000>;
 				charge-full-design-microamp-hours = <6700000>;
 			};
 		};
+	};
+	__overrides__ {
+		energy_full_design_uwh = <&battery>, "energy-full-design-microwatt-hours:0";
+		charge_full_design_uah = <&battery>, "charge-full-design-microamp-hours:0";
 	};
 	fragment@2 {
 		target-path = "/";
