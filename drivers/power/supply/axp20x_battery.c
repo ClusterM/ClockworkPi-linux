@@ -514,16 +514,21 @@ static int axp20x_battery_get_prop(struct power_supply *psy,
 		return 0;
 
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
-		if (!axp20x_batt->energy_full_design) {
+		if (!axp20x_batt->charge_full_design) {
+			/* charge full design is not configured in device tree, return error */
 			return -ENODATA;
 		}
-		val->intval = axp20x_batt->energy_full_design;
+		val->intval = axp20x_batt->charge_full_design;
 
 		return 0;
 
 	case POWER_SUPPLY_PROP_ENERGY_FULL:
 	case POWER_SUPPLY_PROP_ENERGY_NOW:
 	case POWER_SUPPLY_PROP_ENERGY_FULL_DESIGN:
+		if (!axp20x_batt->energy_full_design) {
+			/* energy full design is not configured in device tree, return error */
+			return -ENODATA;
+		}
 		if (psp == POWER_SUPPLY_PROP_ENERGY_FULL) {
 			// TODO
 			val->intval = axp20x_batt->energy_full_design;
