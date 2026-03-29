@@ -320,17 +320,35 @@ static int axp20x_get_charge_now_uah(struct axp20x_batt_ps *axp,
 static int axp20x_set_charge_full_uah(struct axp20x_batt_ps *axp,
 					      int cfd)
 {
-	__be16 raw;
+	int ret, r0 = 0, r1 = 0;
 
-	if (cfd) {
-		cfd /= 1456;
-		raw = cpu_to_be16(BIT(15) | (cfd & 0x7FFF));
-	} else {
-		raw = 0;
+	if (cfd < 0) {
+		return -EINVAL;
 	}
 
-	return regmap_bulk_write(axp->regmap, AXP288_FG_DES_CAP1_REG,
-				 &raw, sizeof(raw));
+	if (cfd) {
+		cfd = cfd / 1456;
+		r0 = cfd & 0xff;
+		r1 = BIT(7) | ((cfd >> 8) & 0xff);
+	}
+
+	/* 
+	* Write order is important!!! 0xe0 first, then 0xe1
+	* Because changes applied only after both registers are written.
+	*/
+
+	ret = regmap_update_bits(axp->regmap,
+				AXP288_FG_DES_CAP1_REG, 0xff,
+				r1);
+	if (ret)
+		return ret;
+	ret = regmap_update_bits(axp->regmap,
+				AXP288_FG_DES_CAP0_REG, 0xff,
+				r0);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static int axp717_get_constant_charge_current(struct axp20x_batt_ps *axp,
@@ -1311,6 +1329,9 @@ static int axp20x_power_probe(struct platform_device *pdev)
 		ret = axp20x_get_charge_full_uah(axp20x_batt, &cfd);
 		if (!ret) {
 			dev_info(axp20x_batt->dev, "current charge full design is %d uAh", cfd);
+		} else {
+			dev_warn(axp20x_batt->dev,
+				"failed to get current charge full design, error: %d", ret);
 		}
 	} else {
 		/* battery capacity is not specified in device tree, get it from PMIC */
