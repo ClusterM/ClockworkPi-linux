@@ -123,8 +123,6 @@ struct axp20x_batt_ps {
 	unsigned int max_ccc;
 	int charge_full_design;
 	int energy_full_design;
-	int current_now;
-	int voltage_now;
 	const struct axp_data *data;
 };
 
@@ -463,7 +461,6 @@ static int axp20x_battery_get_prop(struct power_supply *psy,
 
 		/* IIO framework gives mA but Power Supply framework gives uA */
 		val->intval *= 1000;
-		axp20x_batt->current_now = val->intval;
 
 		break;
 
@@ -513,7 +510,6 @@ static int axp20x_battery_get_prop(struct power_supply *psy,
 
 		/* IIO framework gives mV but Power Supply framework gives uV */
 		val->intval *= 1000;
-		axp20x_batt->current_now = val->intval;
 
 		break;
 
@@ -589,11 +585,41 @@ static int axp20x_battery_get_prop(struct power_supply *psy,
 			return ret;
 		break;
 
-	case POWER_SUPPLY_PROP_POWER_NOW:
-		val->intval = (axp20x_batt->voltage_now / 10000) *
-			      axp20x_batt->current_now;
-		val->intval = val->intval / 100; // uW
+	case POWER_SUPPLY_PROP_POWER_NOW: {
+		int v_uv, i_ua;
+		s64 pwr_uw;
+
+		ret = iio_read_channel_processed(axp20x_batt->batt_v, &val1);
+		if (ret)
+			return ret;
+		v_uv = val1 * 1000;
+
+		ret = regmap_read(axp20x_batt->regmap, AXP20X_PWR_INPUT_STATUS,
+				  &reg);
+		if (ret)
+			return ret;
+
+		if (reg & AXP20X_PWR_STATUS_BAT_CHARGING) {
+			ret = iio_read_channel_processed(
+				axp20x_batt->batt_chrg_i, &val1);
+			if (ret)
+				return ret;
+			i_ua = val1 * 1000;
+		} else {
+			ret = iio_read_channel_processed(
+				axp20x_batt->batt_dischrg_i, &val1);
+			if (ret)
+				return ret;
+			i_ua = -val1 * 1000;
+		}
+
+		pwr_uw = (s64)v_uv * (s64)i_ua;
+		if (pwr_uw < 0)
+			pwr_uw = -pwr_uw;
+		val->intval = (int)(pwr_uw / 1000000);
+
 		break;
+	}
 
 	default:
 		return -EINVAL;
