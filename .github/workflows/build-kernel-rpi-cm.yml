@@ -1,0 +1,69 @@
+# Build 64-bit Raspberry Pi kernel (bcm2712_defconfig) for CM4/CM5 class boards.
+# Produces Image.gz, modules, and Broadcom DTBs in a versioned tarball artifact.
+
+name: Build kernel (RPi CM4/CM5, arm64)
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: kernel-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      ARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex gcc gcc-aarch64-linux-gnu \
+            libssl-dev libncurses-dev make python3 rsync xz-utils
+
+      - name: Configure kernel
+        run: |
+          set -euo pipefail
+          make bcm2712_defconfig
+          KERNELRELEASE="$(make -s kernelrelease)"
+          echo "KERNELRELEASE=${KERNELRELEASE}" >> "${GITHUB_ENV}"
+          echo "Kernel release: ${KERNELRELEASE}"
+
+      - name: Build Image.gz, modules, and dtbs
+        run: |
+          set -euo pipefail
+          make -j$(nproc) Image.gz modules dtbs
+
+      - name: Stage artifacts
+        run: |
+          set -euo pipefail
+          STAGE="${GITHUB_WORKSPACE}/kernel-artifact"
+          mkdir -p "${STAGE}/modules" "${STAGE}/dtbs"
+          cp arch/arm64/boot/Image.gz "${STAGE}/Image.gz"
+          # Cross-build: skip host depmod (wrong arch for /sbin/depmod)
+          make INSTALL_MOD_PATH="${STAGE}/modules" INSTALL_MOD_STRIP=1 \
+            DEPMOD=/bin/true modules_install
+          rsync -a arch/arm64/boot/dts/broadcom/ "${STAGE}/dtbs/"
+
+      - name: Pack release archive
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/kernel-bcm2712-arm64-${KERNELRELEASE}.tar.xz"
+          tar -C "${GITHUB_WORKSPACE}/kernel-artifact" -cJf "${OUT}" .
+          ls -lh "${OUT}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-bcm2712-arm64-${{ env.KERNELRELEASE }}
+          path: kernel-bcm2712-arm64-${{ env.KERNELRELEASE }}.tar.xz
+          if-no-files-found: error
