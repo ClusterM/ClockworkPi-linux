@@ -1,0 +1,60 @@
+# Nightly: rebase this repo's branch onto raspberrypi/linux rpi-6.12.y, then force-push.
+# Upstream fetch uses HTTPS (anonymous read). SSH (git@github.com:...) needs a deploy key in CI.
+# Requires: contents write + allow force-push for the branch (branch protection may block).
+# Repository secret REBASE_PUSH_TOKEN (PAT with repo contents:write): push uses it so other
+# workflows still run on push (pushes with GITHUB_TOKEN do not trigger workflow_dispatch/push listeners).
+
+name: Nightly rebase onto rpi-6.12.y
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+env:
+  REBASE_BRANCH: clockworkpi-6.12.x-live
+  UPSTREAM_BRANCH: rpi-6.12.y
+  # Public clone URL; same repo as git@github.com:raspberrypi/linux.git
+  UPSTREAM_URL: https://github.com/raspberrypi/linux.git
+
+concurrency:
+  group: nightly-rebase-${{ github.repository }}-clockworkpi-6.12.x-live
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout branch (full history)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.REBASE_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.REBASE_PUSH_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream and rebase
+        run: |
+          set -euo pipefail
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream "${UPSTREAM_URL}"
+          else
+            git remote add upstream "${UPSTREAM_URL}"
+          fi
+          git fetch --no-tags upstream "refs/heads/${UPSTREAM_BRANCH}:refs/remotes/upstream/${UPSTREAM_BRANCH}"
+          git fetch origin "${REBASE_BRANCH}"
+          git checkout -B "${REBASE_BRANCH}" "origin/${REBASE_BRANCH}"
+          git rebase "upstream/${UPSTREAM_BRANCH}"
+
+      - name: Push (force-with-lease)
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin "refs/heads/${REBASE_BRANCH}"
