@@ -1,10 +1,10 @@
-# Nightly: rebase this repo's branch onto raspberrypi/linux rpi-6.12.y, then force-push.
+# Nightly: rebase this repo's branch onto raspberrypi/linux rpi-7.0.y, then force-push.
 # Upstream fetch uses HTTPS (anonymous read). SSH (git@github.com:...) needs a deploy key in CI.
 # Requires: contents write + allow force-push for the branch (branch protection may block).
 # Repository secret REBASE_PUSH_TOKEN (PAT with repo contents:write): push uses it so other
 # workflows still run on push (pushes with GITHUB_TOKEN do not trigger workflow_dispatch/push listeners).
 
-name: Nightly rebase onto rpi-6.12.y
+name: Nightly rebase onto rpi-7.0.y
 
 on:
   schedule:
@@ -12,13 +12,13 @@ on:
   workflow_dispatch:
 
 env:
-  REBASE_BRANCH: clockworkpi-6.12.x-live
-  UPSTREAM_BRANCH: rpi-6.12.y
+  REBASE_BRANCH: clockworkpi-7.0.y-live
+  UPSTREAM_BRANCH: rpi-7.0.y
   # Public clone URL; same repo as git@github.com:raspberrypi/linux.git
   UPSTREAM_URL: https://github.com/raspberrypi/linux.git
 
 concurrency:
-  group: nightly-rebase-${{ github.repository }}-clockworkpi-6.12.x-live
+  group: nightly-rebase-${{ github.repository }}-clockworkpi-7.0.y-live
   cancel-in-progress: false
 
 jobs:
