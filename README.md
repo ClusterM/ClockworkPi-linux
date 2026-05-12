@@ -81,6 +81,7 @@ dtoverlay=clockworkpi-uconsole-cm5,charge_full_design_uah=6900000,energy_full_de
 ---
 
 
+
 ## Building and deploying
 
 Follow the standard **Raspberry Pi kernel build** workflow (cross-compile or native), install modules/kernel image as for your board (CM4/CM5 vs Pi 4, etc.), and enable the appropriate **`dtoverlay=`** for your ClockworkPi device in `config.txt`. Override battery parameters if your pack differs from the default overlay values.
@@ -98,6 +99,7 @@ This repository runs **GitHub Actions** that cross-build an **arm64** image with
 | What | URL |
 |------|-----|
 | **Download page (GitHub Pages)** | [https://clusterm.github.io/ClockworkPi-linux/](https://clusterm.github.io/ClockworkPi-linux/) |
+| **Repository** | [https://github.com/ClusterM/ClockworkPi-linux/](https://github.com/ClusterM/ClockworkPi-linux/) |
 | **Workflow runs & artifacts** | [Actions](https://github.com/ClusterM/ClockworkPi-linux/actions) |
 
 If the tarball is too large for Pages or you need an older run, grab the same file from the **Artifacts** section of the corresponding workflow run.
@@ -125,7 +127,7 @@ If the tarball is too large for Pages or you need an older run, grab the same fi
 
 4. **Device trees** — copy the **`.dtb`** files you need from `dtbs/` into the `/boot/firmware`:
    ```sh
-   sudo cp -a /tmp/k/dtbs/*.dtb /boot/firmware/
+   sudo rsync -a /tmp/k/dtbs/ /boot/firmware/
    ```
 
 5. **Edit config.txt** - change image name into `/boot/firmware/config.txt`. Example config:
