@@ -127,19 +127,22 @@ static const struct regmap_access_table axp192_volatile_table = {
 	.n_yes_ranges	= ARRAY_SIZE(axp192_volatile_ranges),
 };
 
-/* AXP22x ranges are shared with the AXP809, as they cover the same range */
+/* AXP22x ranges are shared with the AXP809 and AXP288, as they cover the same range */
 static const struct regmap_range axp22x_writeable_ranges[] = {
 	regmap_reg_range(AXP20X_DATACACHE(0), AXP20X_IRQ5_STATE),
 	regmap_reg_range(AXP20X_CHRG_CTRL1, AXP22X_CHRG_CTRL3),
 	regmap_reg_range(AXP20X_DCDC_MODE, AXP22X_BATLOW_THRES1),
+	regmap_reg_range(AXP288_FG_DES_CAP1_REG, AXP288_FG_DES_CAP0_REG),
 };
 
 static const struct regmap_range axp22x_volatile_ranges[] = {
+	regmap_reg_range(AXP20X_V_OFF, AXP20X_V_OFF),
+	regmap_reg_range(AXP20X_CHRG_CTRL1, AXP20X_CHRG_CTRL2),
 	regmap_reg_range(AXP20X_PWR_INPUT_STATUS, AXP20X_PWR_OP_MODE),
 	regmap_reg_range(AXP20X_IRQ1_EN, AXP20X_IRQ5_STATE),
 	regmap_reg_range(AXP22X_GPIO_STATE, AXP22X_GPIO_STATE),
 	regmap_reg_range(AXP22X_PMIC_TEMP_H, AXP20X_IPSOUT_V_HIGH_L),
-	regmap_reg_range(AXP20X_FG_RES, AXP20X_FG_RES),
+	regmap_reg_range(AXP20X_CC_CTRL, AXP288_FG_CC_CAP_REG),
 };
 
 static const struct regmap_access_table axp22x_writeable_table = {
