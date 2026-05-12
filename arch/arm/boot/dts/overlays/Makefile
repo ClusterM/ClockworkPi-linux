@@ -42,7 +42,6 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	chipcap2.dtbo \
 	chipdip-dac.dtbo \
 	cirrus-wm5102.dtbo \
-	clockworkpi-custom-battery.dtbo \
 	clockworkpi-devterm-cm5.dtbo \
 	clockworkpi-devterm.dtbo \
 	clockworkpi-uconsole-cm3.dtbo \
