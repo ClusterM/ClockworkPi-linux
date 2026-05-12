@@ -91,8 +91,56 @@ Together, these avoid losing long frames when sending or receiving such signals 
 
 ---
 
+
 ## Building and deploying
 
 Follow the standard **Raspberry Pi kernel build** workflow (cross-compile or native), install modules/kernel image as for your board (CM4/CM5 vs Pi 4, etc.), and enable the appropriate **`dtoverlay=`** for your ClockworkPi device in `config.txt`. Override battery parameters if your pack differs from the default overlay values.
 
 For upstream history and base kernel documentation, see [raspberrypi/linux](https://github.com/raspberrypi/linux) and the original [ak-rex/ClockworkPi-linux](https://github.com/ak-rex/ClockworkPi-linux) project.
+
+---
+
+
+
+## Prebuilt kernel (GitHub Actions & GitHub Pages)
+
+This repository runs **GitHub Actions** that cross-build an **arm64** image with **`bcm2712_defconfig`** (Raspberry Pi 6.12-style tree): compressed kernel image, **out-of-tree modules**, and **Broadcom `.dtb`** files from `arch/arm64/boot/dts/broadcom/`. Successful runs on branch **`clockworkpi-6.12.x-live`** also publish a small **GitHub Pages** site with the **kernel release string**, **last build time**, and a **direct download link** for the tarball.
+
+| What | URL |
+|------|-----|
+| **Download page (GitHub Pages)** | [https://clusterm.github.io/ClockworkPi-linux/](https://clusterm.github.io/ClockworkPi-linux/) |
+| **Repository** | [https://github.com/ClusterM/ClockworkPi-linux/](https://github.com/ClusterM/ClockworkPi-linux/) |
+| **Workflow runs & artifacts** | [Actions](https://github.com/ClusterM/ClockworkPi-linux/actions) |
+
+If the tarball is too large for Pages or you need an older run, grab the same file from the **Artifacts** section of the corresponding workflow run.
+
+### Installing the prebuilt tarball (kernel, modules, device trees)
+
+**Warning:** Do this on a **Raspberry Pi OS** (or compatible) system with **backups** of `/boot/firmware`. Wrong kernel/module mismatch will fail to boot until you recover the boot partition. The **module directory name must match** `uname -r` after you boot the new kernel.
+
+1. **Download** the `kernel-*.tar.xz` file from the Pages site or Actions, then extract, for example:
+   ```sh
+   mkdir -p /tmp/k && tar -xJf kernel-*.tar.xz -C /tmp/k
+   ```
+
+2. **Kernel image** — the archive contains **`kernel-*.img`**. Install the decompressed image to `/boot/firmware`:
+   ```sh
+   sudo cp /tmp/k/kernel-*.img /boot/firmware/
+   ```
+
+3. **Modules** — the tree under `modules/lib/modules/<version>/` must be copied to the root filesystem:
+   ```sh
+   KREL=$(basename /tmp/k/modules/lib/modules/*)
+   sudo rsync -a /tmp/k/modules/lib/modules/"$KREL"/ /lib/modules/"$KREL"/
+   sudo depmod -a "$KREL"
+   ```
+
+4. **Device trees** — copy the **`.dtb`** files you need from `dtbs/` into the `/boot/firmware`:
+   ```sh
+   sudo rsync -a /tmp/k/dtbs/ /boot/firmware/
+   ```
+
+5. **Edit config.txt** - change image name into `/boot/firmware/config.txt`. Example config:
+   ```
+   TODO
+   ```
