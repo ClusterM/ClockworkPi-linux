@@ -1,0 +1,160 @@
+# Build 64-bit Raspberry Pi kernel (bcm2712_defconfig) for CM4/CM5 class boards.
+# Produces Image.gz, modules, and Broadcom DTBs in a versioned tarball artifact.
+# Optional: publish tarball + index.html to GitHub Pages (branch below or workflow_dispatch).
+
+name: Build kernel (RPi CM4/CM5, arm64)
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  # Used by run steps only. Job/step `if:` cannot use `env` (GitHub limitation); keep branch in sync below.
+  PAGES_PUBLISH_BRANCH: clockworkpi-7.1.y-live
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: kernel-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      ARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex gcc gcc-aarch64-linux-gnu \
+            libssl-dev libncurses-dev make python3 rsync xz-utils
+
+      - name: Configure kernel
+        run: |
+          set -euo pipefail
+          make bcm2712_defconfig
+          # 4K pages + 39-bit VA instead of bcm2712 16K/47VA (merge + olddefconfig, not sed)
+          ./scripts/kconfig/merge_config.sh -m .config "${GITHUB_WORKSPACE}/.github/clockworkpi-4k-pages.fragment"
+          make olddefconfig
+          grep -q '^CONFIG_ARM64_4K_PAGES=y' .config
+          grep -q '^CONFIG_PAGE_SHIFT=12' .config
+          KERNELRELEASE="$(make -s kernelrelease)"
+          echo "KERNELRELEASE=${KERNELRELEASE}" >> "${GITHUB_ENV}"
+          echo "Kernel release: ${KERNELRELEASE}"
+
+      - name: Build Image.gz, modules, and dtbs
+        run: |
+          set -euo pipefail
+          make -j$(nproc) Image.gz modules dtbs
+
+      - name: Stage artifacts
+        run: |
+          set -euo pipefail
+          STAGE="${GITHUB_WORKSPACE}/kernel-artifact"
+          mkdir -p "${STAGE}/modules" "${STAGE}/dtbs" "${STAGE}/dtbs/overlays"
+          cp arch/arm64/boot/Image.gz "${STAGE}/kernel-${KERNELRELEASE}.img"
+          # Cross-build: skip host depmod (wrong arch for /sbin/depmod)
+          make INSTALL_MOD_PATH="${STAGE}/modules" INSTALL_MOD_STRIP=1 \
+            DEPMOD=/bin/true modules_install
+          cp arch/arm64/boot/dts/broadcom/*.dtb "${STAGE}/dtbs/"
+          cp arch/arm64/boot/dts/overlays/*.dtb "${STAGE}/dtbs/overlays/"
+
+      - name: Pack release archive
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/kernel-clockworkpi-${KERNELRELEASE}.tar.xz"
+          tar -C "${GITHUB_WORKSPACE}/kernel-artifact" -cJf "${OUT}" .
+          ls -lh "${OUT}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: kernel-clockworkpi-${{ env.KERNELRELEASE }}
+          path: kernel-clockworkpi-${{ env.KERNELRELEASE }}.tar.xz
+          if-no-files-found: error
+
+      # Avoid overwriting the public Pages site from arbitrary topic branches.
+      - name: Prepare GitHub Pages bundle
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+        env:
+          KERNELRELEASE: ${{ env.KERNELRELEASE }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="kernel-clockworkpi-${KERNELRELEASE}.tar.xz"
+          PAGES="${GITHUB_WORKSPACE}/pages"
+          mkdir -p "${PAGES}"
+          cp "${GITHUB_WORKSPACE}/${ARCHIVE}" "${PAGES}/"
+          python3 << 'PY'
+          import html
+          import os
+          from datetime import datetime, timezone
+
+          kernel = os.environ["KERNELRELEASE"]
+          archive = f"kernel-clockworkpi-{kernel}.tar.xz"
+          owner = os.environ["GITHUB_REPOSITORY_OWNER"]
+          source_url = os.environ["GITHUB_REPOSITORY"]
+          repo = os.environ["GITHUB_REPOSITORY"].split("/", 1)[1]
+          base = f"https://{owner}.github.io/{repo}"
+          full_url = f"{base}/{archive}"
+          updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+          run_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ["GITHUB_REPOSITORY"] + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]
+
+          doc = f"""<!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Kernel build {html.escape(kernel)}</title>
+            <style>
+              body {{ font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }}
+              code {{ background: #f0f0f0; padding: 0.12em 0.35em; border-radius: 4px; }}
+              a {{ color: #0969da; }}
+            </style>
+          </head>
+          <body>
+            <h1>Raspberry Pi Kernel for uConsole CM4/CM5</h1>
+            <p><strong>Last updated:</strong> {html.escape(updated)}</p>
+            <p><strong>Kernel release:</strong> <code>{html.escape(kernel)}</code></p>
+            <p><strong>Download:</strong> <a href="{html.escape(archive)}">{html.escape(archive)}</a></p>
+            <p><strong>Source code:</strong> <a href="{html.escape(source_url)}">{html.escape(source_url)}</a></p>
+            <p><strong>Workflow run:</strong> <a href="{html.escape(run_url)}">{html.escape(run_url)}</a></p>
+          </body>
+          </html>
+          """
+          pages = os.environ["GITHUB_WORKSPACE"] + "/pages"
+          os.makedirs(pages, exist_ok=True)
+          with open(os.path.join(pages, "index.html"), "w", encoding="utf-8") as f:
+              f.write(doc)
+          PY
+
+      - name: Upload Pages artifact
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
+
+  deploy:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
