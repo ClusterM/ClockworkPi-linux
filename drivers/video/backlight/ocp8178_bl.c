@@ -49,7 +49,7 @@ struct ocp8178_backlight {
 #define LOW_BIT_LOW_TIME 50
 #define HIGH_BIT_HIGH_TIME 50
 #define HIGH_BIT_LOW_TIME 10
-#define MAX_BRIGHTNESS_VALUE 9
+#define MAX_BRIGHTNESS_VALUE 21
 
 static void entry_1wire_mode(struct ocp8178_backlight *gbl)
 {
@@ -121,7 +121,7 @@ static void write_byte(struct ocp8178_backlight *gbl, int byte)
 	local_irq_restore(flags);
 }
 
-unsigned char ocp8178_bl_table[MAX_BRIGHTNESS_VALUE+1] = {0, 1, 4, 8, 12, 16, 20, 24, 28, 31};
+unsigned char ocp8178_bl_table[MAX_BRIGHTNESS_VALUE+1] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 25, 28, 31};
 
 static int ocp8178_update_status(struct backlight_device *bl)
 {
