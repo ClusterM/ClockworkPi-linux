@@ -1,0 +1,7 @@
+# Applied after bcm2712_defconfig: 4K pages + 39-bit VA (matches typical Raspberry Pi OS arm64 userland).
+# See arch/arm64/Kconfig defaults for derived symbols (CONT_PTE_SHIFT, PAGE_SHIFT, mmap entropy, etc.).
+CONFIG_ARM64_4K_PAGES=y
+# CONFIG_ARM64_16K_PAGES is not set
+CONFIG_ARM64_VA_BITS_39=y
+# CONFIG_ARM64_VA_BITS_47 is not set
+# CONFIG_DRM_XE is not set
