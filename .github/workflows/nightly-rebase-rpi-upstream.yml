@@ -1,0 +1,111 @@
+# Nightly: rebase this repo's branch onto raspberrypi/linux rpi-7.2.y, then force-push.
+# Upstream fetch uses HTTPS (anonymous read). SSH (git@github.com:...) needs a deploy key in CI.
+# Requires: contents write + allow force-push for the branch (branch protection may block).
+# Repository secret REBASE_PUSH_TOKEN (PAT with repo contents:write): push uses it so other
+# workflows still run on push (pushes with GITHUB_TOKEN do not trigger workflow_dispatch/push listeners).
+#
+# Rebase range: commits from the bottom of the ClockworkPi stack (subject below) through branch tip.
+# Parent of that commit is the "old base"; replay onto current upstream. This avoids
+# merge-base picking an ancient common ancestor after upstream history rewrites (force-push).
+# The bottom commit is resolved at runtime by subject so its hash stays valid after each rebase.
+#
+# README.md conflicts are auto-resolved by keeping the replayed (ClockworkPi) version (--theirs).
+
+name: Nightly rebase onto rpi-7.2.y
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+env:
+  REBASE_BRANCH: clockworkpi-7.2.y-live
+  UPSTREAM_BRANCH: rpi-7.2.y
+  # Subject of the bottom ClockworkPi-only commit; nightly replays that commit..HEAD onto upstream.
+  CLOCKWORKPI_FIRST_COMMIT_SUBJECT: ClockworkPi Drivers
+  # Public clone URL; same repo as git@github.com:raspberrypi/linux.git
+  UPSTREAM_URL: https://github.com/raspberrypi/linux.git
+
+concurrency:
+  group: nightly-rebase-${{ github.repository }}-clockworkpi-7.2.y-live
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout branch (full history)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.REBASE_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.REBASE_PUSH_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream and rebase
+        run: |
+          set -euo pipefail
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream "${UPSTREAM_URL}"
+          else
+            git remote add upstream "${UPSTREAM_URL}"
+          fi
+          git fetch --no-tags upstream "refs/heads/${UPSTREAM_BRANCH}:refs/remotes/upstream/${UPSTREAM_BRANCH}"
+          git fetch origin "${REBASE_BRANCH}"
+          git checkout -B "${REBASE_BRANCH}" "origin/${REBASE_BRANCH}"
+          CLOCKWORKPI_FIRST_COMMIT=$(
+            git log --format=%H --reverse --grep="^${CLOCKWORKPI_FIRST_COMMIT_SUBJECT}$" HEAD | head -1
+          )
+          if [ -z "${CLOCKWORKPI_FIRST_COMMIT}" ]; then
+            echo "Could not find commit with subject '${CLOCKWORKPI_FIRST_COMMIT_SUBJECT}' on ${REBASE_BRANCH}"
+            exit 1
+          fi
+          echo "Rebase range starts at ${CLOCKWORKPI_FIRST_COMMIT} ($(git log -1 --format=%s "${CLOCKWORKPI_FIRST_COMMIT}"))"
+          git rev-parse --verify "${CLOCKWORKPI_FIRST_COMMIT}^{commit}" >/dev/null
+
+          rebase_in_progress() {
+            [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]
+          }
+
+          resolve_readme_only_conflicts() {
+            local unmerged
+            unmerged="$(git diff --name-only --diff-filter=U | LC_ALL=C sort | paste -sd, -)"
+            if [ -z "${unmerged}" ]; then
+              echo "Rebase stopped without unmerged paths"
+              return 1
+            fi
+            if [ "${unmerged}" != "README.md" ]; then
+              echo "Unresolved conflicts (only README.md is auto-resolved):"
+              git diff --name-only --diff-filter=U
+              return 1
+            fi
+            echo "Auto-resolving README.md conflict (keeping replayed ClockworkPi version)"
+            git checkout --theirs README.md
+            git add README.md
+            GIT_EDITOR=true git rebase --continue
+          }
+
+          if git rebase --onto "upstream/${UPSTREAM_BRANCH}" "${CLOCKWORKPI_FIRST_COMMIT}^" "${REBASE_BRANCH}"; then
+            echo "Rebase finished"
+          else
+            if ! rebase_in_progress; then
+              echo "Rebase failed outside of conflict resolution"
+              exit 1
+            fi
+            while rebase_in_progress; do
+              resolve_readme_only_conflicts || exit 1
+            done
+          fi
+
+      - name: Push (force-with-lease)
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin "refs/heads/${REBASE_BRANCH}"
