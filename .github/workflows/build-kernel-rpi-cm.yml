@@ -1,6 +1,7 @@
 # Build 64-bit Raspberry Pi kernel (bcm2712_defconfig) for CM4/CM5 class boards.
-# Produces Image.gz, modules, and Broadcom DTBs in a versioned tarball artifact.
-# Optional: publish tarball + index.html to GitHub Pages (branch below or workflow_dispatch).
+# Produces linux-image / linux-headers Debian packages, a linux-image-clockworkpi
+# metapackage, and (on the live branch / workflow_dispatch) a signed APT repo on
+# GitHub Pages.
 
 name: Build kernel (RPi CM4/CM5, arm64)
 
@@ -10,10 +11,10 @@ on:
 
 env:
   # Used by run steps only. Job/step `if:` cannot use `env` (GitHub limitation); keep branch in sync below.
-  PAGES_PUBLISH_BRANCH: clockworkpi-7.1.y-live
+  PAGES_PUBLISH_BRANCH: clockworkpi-7.2.y-live
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -28,6 +29,11 @@ jobs:
     env:
       ARCH: arm64
       CROSS_COMPILE: aarch64-linux-gnu-
+      # Cross-build: host depmod cannot process arm64 modules
+      DEPMOD: /bin/true
+      # Suppress trailing '+' from scripts/setlocalversion when HEAD is not
+      # an annotated tag (CONFIG_LOCALVERSION from .config still applies).
+      LOCALVERSION: ""
 
     steps:
       - name: Checkout
@@ -37,116 +43,142 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            bc bison flex gcc gcc-aarch64-linux-gnu \
-            libssl-dev libncurses-dev make python3 rsync xz-utils
+            bc bison flex build-essential gcc gcc-aarch64-linux-gnu \
+            libc6-dev libc6-dev-arm64-cross \
+            libssl-dev libncurses-dev libelf-dev libdw-dev \
+            make python3 rsync xz-utils zstd \
+            dpkg-dev debhelper fakeroot gnupg dirmngr
 
       - name: Configure kernel
         run: |
           set -euo pipefail
           make bcm2712_defconfig
-          # 4K pages + 39-bit VA instead of bcm2712 16K/47VA (merge + olddefconfig, not sed)
+          # 4K pages + 39-bit VA + LOCALVERSION from fragment
           ./scripts/kconfig/merge_config.sh -m .config "${GITHUB_WORKSPACE}/.github/clockworkpi-4k-pages.fragment"
           make olddefconfig
+          # merge_config -m only touches .config; ensure auto.conf / kernel.release match
+          rm -f include/config/kernel.release
+          make -s syncconfig
           grep -q '^CONFIG_ARM64_4K_PAGES=y' .config
           grep -q '^CONFIG_PAGE_SHIFT=12' .config
+          grep -q 'CONFIG_LOCALVERSION=.*clockworkpi' .config
+          grep -q 'CONFIG_LOCALVERSION=.*clockworkpi' include/config/auto.conf
           KERNELRELEASE="$(make -s kernelrelease)"
+          if [[ "${KERNELRELEASE}" != *clockworkpi* ]]; then
+            echo "error: KERNELRELEASE='${KERNELRELEASE}' missing clockworkpi localversion" >&2
+            grep LOCALVERSION .config include/config/auto.conf >&2 || true
+            exit 1
+          fi
+          if [[ "${KERNELRELEASE}" == *+ ]]; then
+            echo "error: KERNELRELEASE='${KERNELRELEASE}' ends with '+'" >&2
+            exit 1
+          fi
           echo "KERNELRELEASE=${KERNELRELEASE}" >> "${GITHUB_ENV}"
           echo "Kernel release: ${KERNELRELEASE}"
 
-      - name: Build Image.gz, modules, and dtbs
+      - name: Build Debian packages (bindeb-pkg)
         run: |
           set -euo pipefail
-          make -j$(nproc) Image.gz modules dtbs
+          # Monotonic package revision for APT upgrades / pruning
+          KDEB_PKGVERSION="${{ github.run_number }}"
+          export KDEB_PKGVERSION
+          export KDEB_CHANGELOG_DIST=stable
+          export KBUILD_DEBARCH=arm64
+          # -d: skip build-dep check (host is amd64, package arch is arm64)
+          make -j"$(nproc)" bindeb-pkg DPKG_FLAGS=-d
+          mkdir -p "${GITHUB_WORKSPACE}/debs"
+          # Packages are written to the parent of the source tree
+          find "${GITHUB_WORKSPACE}/.." -maxdepth 1 -type f -name '*.deb' -print
+          # Keep image/headers only (skip dbg / libc-dev)
+          find "${GITHUB_WORKSPACE}/.." -maxdepth 1 -type f \( \
+              -name "linux-image-${KERNELRELEASE}_*.deb" -o \
+              -name "linux-headers-${KERNELRELEASE}_*.deb" \
+            \) -exec mv -t "${GITHUB_WORKSPACE}/debs/" {} +
+          ls -lh "${GITHUB_WORKSPACE}/debs/"
 
-      - name: Stage artifacts
+      - name: Inject firmware hooks into linux-image
         run: |
           set -euo pipefail
-          STAGE="${GITHUB_WORKSPACE}/kernel-artifact"
-          mkdir -p "${STAGE}/modules" "${STAGE}/dtbs" "${STAGE}/dtbs/overlays"
-          cp arch/arm64/boot/Image.gz "${STAGE}/kernel-${KERNELRELEASE}.img"
-          # Cross-build: skip host depmod (wrong arch for /sbin/depmod)
-          make INSTALL_MOD_PATH="${STAGE}/modules" INSTALL_MOD_STRIP=1 \
-            DEPMOD=/bin/true modules_install
-          cp arch/arm64/boot/dts/broadcom/*.dtb "${STAGE}/dtbs/"
-          cp arch/arm64/boot/dts/overlays/*.dtb "${STAGE}/dtbs/overlays/"
+          img_deb="$(ls "${GITHUB_WORKSPACE}/debs"/linux-image-"${KERNELRELEASE}"_*.deb)"
+          "${GITHUB_WORKSPACE}/.github/scripts/inject-kernel-hooks.sh" \
+            "${img_deb}" \
+            "${GITHUB_WORKSPACE}/.github/kernel-hooks"
 
-      - name: Pack release archive
+      - name: Build linux-image-clockworkpi metapackage
         run: |
           set -euo pipefail
-          OUT="${GITHUB_WORKSPACE}/kernel-clockworkpi-${KERNELRELEASE}.tar.xz"
-          tar -C "${GITHUB_WORKSPACE}/kernel-artifact" -cJf "${OUT}" .
-          ls -lh "${OUT}"
+          "${GITHUB_WORKSPACE}/.github/scripts/build-meta-package.sh" \
+            "${KERNELRELEASE}" \
+            "${{ github.run_number }}" \
+            "${GITHUB_WORKSPACE}/debs"
+          ls -lh "${GITHUB_WORKSPACE}/debs/"
 
-      - name: Upload artifact
+      - name: Upload deb artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: kernel-clockworkpi-${{ env.KERNELRELEASE }}
-          path: kernel-clockworkpi-${{ env.KERNELRELEASE }}.tar.xz
+          name: kernel-debs-${{ env.KERNELRELEASE }}
+          path: debs/*.deb
           if-no-files-found: error
 
-      # Avoid overwriting the public Pages site from arbitrary topic branches.
-      - name: Prepare GitHub Pages bundle
-        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+      - name: Prepare GitHub Pages APT bundle
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.2.y-live'
         env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
           KERNELRELEASE: ${{ env.KERNELRELEASE }}
         run: |
           set -euo pipefail
-          ARCHIVE="kernel-clockworkpi-${KERNELRELEASE}.tar.xz"
+          if [[ -z "${APT_GPG_PRIVATE_KEY:-}" ]]; then
+            echo "error: repository secret APT_GPG_PRIVATE_KEY is not set" >&2
+            echo "Create a GPG key and add the armored private key as APT_GPG_PRIVATE_KEY." >&2
+            exit 1
+          fi
+
           PAGES="${GITHUB_WORKSPACE}/pages"
-          mkdir -p "${PAGES}"
-          cp "${GITHUB_WORKSPACE}/${ARCHIVE}" "${PAGES}/"
-          python3 << 'PY'
-          import html
-          import os
-          from datetime import datetime, timezone
+          PREV="${GITHUB_WORKSPACE}/prev-apt"
+          mkdir -p "${PAGES}" "${PREV}"
 
-          kernel = os.environ["KERNELRELEASE"]
-          archive = f"kernel-clockworkpi-{kernel}.tar.xz"
-          owner = os.environ["GITHUB_REPOSITORY_OWNER"]
-          source_url = os.environ["GITHUB_REPOSITORY"]
-          repo = os.environ["GITHUB_REPOSITORY"].split("/", 1)[1]
-          base = f"https://{owner}.github.io/{repo}"
-          full_url = f"{base}/{archive}"
-          updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-          run_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ["GITHUB_REPOSITORY"] + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          APT_BASE="https://${OWNER}.github.io/${REPO_NAME}/apt"
+          "${GITHUB_WORKSPACE}/.github/scripts/fetch-apt-pool.sh" "${APT_BASE}" "${PREV}" || true
 
-          doc = f"""<!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Kernel build {html.escape(kernel)}</title>
-            <style>
-              body {{ font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }}
-              code {{ background: #f0f0f0; padding: 0.12em 0.35em; border-radius: 4px; }}
-              a {{ color: #0969da; }}
-            </style>
-          </head>
-          <body>
-            <h1>Raspberry Pi Kernel for uConsole CM4/CM5</h1>
-            <p><strong>Last updated:</strong> {html.escape(updated)}</p>
-            <p><strong>Kernel release:</strong> <code>{html.escape(kernel)}</code></p>
-            <p><strong>Download:</strong> <a href="{html.escape(archive)}">{html.escape(archive)}</a></p>
-            <p><strong>Source code:</strong> <a href="{html.escape(source_url)}">{html.escape(source_url)}</a></p>
-            <p><strong>Workflow run:</strong> <a href="{html.escape(run_url)}">{html.escape(run_url)}</a></p>
-          </body>
-          </html>
-          """
-          pages = os.environ["GITHUB_WORKSPACE"] + "/pages"
-          os.makedirs(pages, exist_ok=True)
-          with open(os.path.join(pages, "index.html"), "w", encoding="utf-8") as f:
-              f.write(doc)
-          PY
+          "${GITHUB_WORKSPACE}/.github/scripts/publish-apt-repo.sh" \
+            "${PAGES}" \
+            "${GITHUB_WORKSPACE}/debs" \
+            "${PREV}"
+
+          "${GITHUB_WORKSPACE}/.github/scripts/generate-pages-index.sh" \
+            "${PAGES}" \
+            "${KERNELRELEASE}"
 
       - name: Upload Pages artifact
-        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.2.y-live'
         uses: actions/upload-pages-artifact@v4
         with:
           path: pages
 
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.2.y-live'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KERNELRELEASE: ${{ env.KERNELRELEASE }}
+        run: |
+          set -euo pipefail
+          tag="kernel-${KERNELRELEASE}"
+          title="Kernel ${KERNELRELEASE}"
+          # Replace release for the same tag when rebuilding the same version string
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release delete "${tag}" --yes --cleanup-tag
+          fi
+          gh release create "${tag}" \
+            --title "${title}" \
+            --notes "ClockworkPi / uConsole arm64 kernel ${KERNELRELEASE}. Install via the APT repo on GitHub Pages, or download the .deb files attached here." \
+            "${GITHUB_WORKSPACE}/debs"/*.deb
+
   deploy:
     needs: build
-    if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+    if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.2.y-live'
     runs-on: ubuntu-latest
     concurrency:
       group: github-pages
