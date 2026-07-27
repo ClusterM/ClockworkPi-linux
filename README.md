@@ -90,47 +90,65 @@ For upstream history and base kernel documentation, see [raspberrypi/linux](http
 
 ---
 
+## Prebuilt kernel (APT on GitHub Pages)
 
+GitHub Actions cross-builds an **arm64** kernel (`bcm2712_defconfig` + 4K pages) into Debian packages:
 
-## Prebuilt kernel (GitHub Actions & GitHub Pages)
+- `linux-image-<release>-clockworkpi` — modules, DTBs, and a postinst hook that installs drop-in boot images
+- `linux-headers-<release>-clockworkpi` — headers for out-of-tree modules
+- `linux-image-clockworkpi` — **metapackage** that always depends on the latest image (so `apt upgrade` works)
 
-This repository runs **GitHub Actions** that cross-build an **arm64** image with **`bcm2712_defconfig`** (Raspberry Pi 6.12-style tree): compressed kernel image, **out-of-tree modules**, and **Broadcom `.dtb`** files from `arch/arm64/boot/dts/broadcom/`. Successful runs on branch **`clockworkpi-6.12.x-live`** also publish a small **GitHub Pages** site with the **kernel release string**, **last build time**, and a **direct download link** for the tarball.
+Successful runs on branch **`clockworkpi-7.2.y-live`** (or manual **workflow_dispatch**) publish a signed **APT repository** on GitHub Pages and attach the same `.deb` files to a GitHub Release.
 
 | What | URL |
 |------|-----|
-| **Download page (GitHub Pages)** | [https://clusterm.github.io/ClockworkPi-linux/](https://clusterm.github.io/ClockworkPi-linux/) |
+| **APT / download page** | [https://clusterm.github.io/ClockworkPi-linux/](https://clusterm.github.io/ClockworkPi-linux/) |
+| **APT base** | [https://clusterm.github.io/ClockworkPi-linux/apt/](https://clusterm.github.io/ClockworkPi-linux/apt/) |
 | **Repository** | [https://github.com/ClusterM/ClockworkPi-linux/](https://github.com/ClusterM/ClockworkPi-linux/) |
 | **Workflow runs & artifacts** | [Actions](https://github.com/ClusterM/ClockworkPi-linux/actions) |
 
-If the tarball is too large for Pages or you need an older run, grab the same file from the **Artifacts** section of the corresponding workflow run.
+### Install from APT (recommended)
 
-### Installing the prebuilt tarball (kernel, modules, device trees)
+**Warning:** Have a backup of `/boot/firmware` (or another way to recover the boot partition). A mismatched kernel/modules pair can prevent boot until you restore it.
 
-**Warning:** Do this on a **Raspberry Pi OS** (or compatible) system with **backups** of `/boot/firmware`. Wrong kernel/module mismatch will fail to boot until you recover the boot partition. The **module directory name must match** `uname -r` after you boot the new kernel.
+```sh
+curl -fsSL https://clusterm.github.io/ClockworkPi-linux/apt/key.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/clockworkpi-linux.gpg
+echo "deb [signed-by=/usr/share/keyrings/clockworkpi-linux.gpg arch=arm64] https://clusterm.github.io/ClockworkPi-linux/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/clockworkpi-linux.list
+sudo apt update
+sudo apt install linux-image-clockworkpi
+sudo reboot
+```
 
-1. **Download** the `kernel-*.tar.xz` file from the Pages site or Actions, then extract, for example:
-   ```sh
-   mkdir -p /tmp/k && tar -xJf kernel-*.tar.xz -C /tmp/k
-   ```
+Later updates:
 
-2. **Kernel image** — the archive contains **`kernel-*.img`**. Install the decompressed image to `/boot/firmware`:
-   ```sh
-   sudo cp /tmp/k/kernel-*.img /boot/firmware/
-   ```
+```sh
+sudo apt update && sudo apt upgrade
+sudo reboot
+```
 
-3. **Modules** — the tree under `modules/lib/modules/<version>/` must be copied to the root filesystem:
-   ```sh
-   KREL=$(basename /tmp/k/modules/lib/modules/*)
-   sudo rsync -a /tmp/k/modules/lib/modules/"$KREL"/ /lib/modules/"$KREL"/
-   sudo depmod -a "$KREL"
-   ```
+Keep your ClockworkPi **`dtoverlay=`** (and other hardware) lines in `/boot/firmware/config.txt`. The package does **not** edit that file for boot selection.
 
-4. **Device trees** — copy the **`.dtb`** files you need from `dtbs/` into the `/boot/firmware`:
-   ```sh
-   sudo rsync -a /tmp/k/dtbs/ /boot/firmware/
-   ```
+### What the package does on install
 
-5. **Edit config.txt** - change image name into `/boot/firmware/config.txt`. Example config:
-   ```
-   TODO
-   ```
+The `linux-image-*-clockworkpi` postinst hook (when `/boot/firmware` exists):
+
+1. Copies the kernel to the firmware **defaults**: **`kernel_2712.img`** (CM5 / Pi 5) and **`kernel8.img`** (CM4 / Pi 4), plus a versioned **`kernel-<release>.img`**
+2. Refreshes Broadcom **`.dtb`** files and **`overlays/`**
+3. Does **not** add `kernel=` / `initramfs` to `config.txt` (bootloader defaults are enough)
+
+**One-time setup:** if `config.txt` still has custom `kernel=…` lines (old manual installs), **delete those lines** (and any leftover `# BEGIN/END clockworkpi-kernel` block from earlier package versions). After that, upgrades only overwrite `kernel_2712.img` / `kernel8.img`.
+
+### Debian `linux-image-*+deb13-arm64` packages
+
+Stock Debian/Raspberry Pi OS `linux-image-*deb13*` packages may still be installed. They put files under `/boot/vmlinuz-*` and large initrds, but they **do not** control firmware boot unless you enable `KERNEL=auto` in `/etc/default/raspi-firmware`. This project's packages intentionally **do not** `Conflict`/`Replace` them. You can `apt purge` old unused `*deb13*` kernels to reclaim disk space if you want.
+
+### Rollback
+
+1. Boot an older image if you kept `kernel-<oldrelease>.img`, or restore a backup of `/boot/firmware`.
+2. Or install a previous version still kept in the APT pool (last few builds are retained), then reboot.
+
+### CI note (maintainers)
+
+Publishing the signed APT repo requires the repository secret **`APT_GPG_PRIVATE_KEY`** (armored private key). Optional: **`APT_GPG_PASSPHRASE`**. Without the secret, live/Pages publish fails on purpose so an unsigned repo is never uploaded.
