@@ -1,0 +1,53 @@
+#!/bin/sh
+# Clean up versioned firmware copy on package remove/purge.
+# Does not delete kernel_2712.img / kernel8.img (may still be the boot image).
+
+set -e
+
+version="$1"
+
+case "${DEB_MAINT_PARAMS:-}" in
+*"abort-"*) exit 0 ;;
+esac
+
+# run-parts passes "remove" / "purge" in DEB_MAINT_PARAMS for postrm
+action="$(printf '%s' "${DEB_MAINT_PARAMS:-}" | tr -d "'\"")"
+case "$action" in
+remove|purge) ;;
+*) exit 0 ;;
+esac
+
+FW=
+if [ -d /boot/firmware ]; then
+	FW=/boot/firmware
+elif [ -d /boot ]; then
+	FW=/boot
+else
+	exit 0
+fi
+
+versioned="$FW/kernel-${version}.img"
+if [ -f "$versioned" ]; then
+	rm -f "$versioned"
+	echo "zz-clockworkpi-rpi-firmware: removed $versioned"
+fi
+
+# Older packages may still have left a managed config block behind.
+if [ "$action" = "purge" ]; then
+	CONFIG="$FW/config.txt"
+	BEGIN="# BEGIN clockworkpi-kernel"
+	END="# END clockworkpi-kernel"
+	if [ -f "$CONFIG" ] && grep -qxF "$BEGIN" "$CONFIG" 2>/dev/null; then
+		tmp="$(mktemp)"
+		awk -v b="$BEGIN" -v e="$END" '
+			$0 == b { skip=1; next }
+			$0 == e { skip=0; next }
+			!skip { print }
+		' "$CONFIG" >"$tmp"
+		cat "$tmp" >"$CONFIG"
+		rm -f "$tmp"
+		echo "zz-clockworkpi-rpi-firmware: removed obsolete managed config.txt block"
+	fi
+fi
+
+exit 0
