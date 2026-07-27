@@ -1,0 +1,86 @@
+#!/bin/sh
+# Install this kernel into Raspberry Pi OS firmware boot paths.
+# Invoked by the linux-image maintainer script via run-parts:
+#   $1 = KERNELRELEASE, $2 = /boot/vmlinuz-<release>
+#
+# Copies the image to the firmware defaults (kernel_2712.img / kernel8.img)
+# and refreshes DTBs/overlays. Does not edit config.txt: remove any custom
+# kernel= lines so the bootloader uses those defaults.
+
+set -e
+
+version="$1"
+vmlinuz="$2"
+
+# Maintainer scripts pass "configure" etc. in DEB_MAINT_PARAMS (quoted).
+case "${DEB_MAINT_PARAMS:-}" in
+*"abort-"*) exit 0 ;;
+esac
+
+# Only act when the image is actually present (configure / upgrades).
+if [ ! -f "$vmlinuz" ]; then
+	exit 0
+fi
+
+FW=
+if [ -d /boot/firmware ]; then
+	FW=/boot/firmware
+elif [ -f /boot/bootcode.bin ] || [ -f /boot/start.elf ] || [ -f /boot/start4.elf ]; then
+	# Older layout: firmware files live directly in /boot
+	FW=/boot
+fi
+
+if [ -z "$FW" ]; then
+	echo "zz-clockworkpi-rpi-firmware: no Raspberry Pi firmware boot dir, skipping" >&2
+	exit 0
+fi
+
+echo "zz-clockworkpi-rpi-firmware: installing $version into $FW"
+
+cp -f "$vmlinuz" "$FW/kernel_2712.img"
+cp -f "$vmlinuz" "$FW/kernel8.img"
+cp -f "$vmlinuz" "$FW/kernel-${version}.img"
+
+imgdir="/usr/lib/linux-image-${version}"
+if [ -d "$imgdir" ]; then
+	# arm64 Raspberry Pi DTBs are often under broadcom/
+	if [ -d "$imgdir/broadcom" ]; then
+		cp -f "$imgdir"/broadcom/*.dtb "$FW/" 2>/dev/null || true
+	fi
+	# Also copy any DTBs sitting at the image dir root
+	find "$imgdir" -maxdepth 1 -type f -name '*.dtb' -exec cp -f {} "$FW/" \;
+
+	if [ -d "$imgdir/overlays" ]; then
+		mkdir -p "$FW/overlays"
+		cp -f "$imgdir"/overlays/* "$FW/overlays/" 2>/dev/null || true
+		# Some Raspberry Pi tooling expects overlays/README to exist
+		touch "$FW/overlays/README"
+	fi
+fi
+
+CONFIG="$FW/config.txt"
+if [ -f "$CONFIG" ]; then
+	BEGIN="# BEGIN clockworkpi-kernel"
+	END="# END clockworkpi-kernel"
+	# Drop a managed block written by older package versions (no longer used).
+	if grep -qxF "$BEGIN" "$CONFIG" 2>/dev/null; then
+		tmp="$(mktemp)"
+		awk -v b="$BEGIN" -v e="$END" '
+			$0 == b { skip=1; next }
+			$0 == e { skip=0; next }
+			!skip { print }
+		' "$CONFIG" >"$tmp"
+		cat "$tmp" >"$CONFIG"
+		rm -f "$tmp"
+		echo "zz-clockworkpi-rpi-firmware: removed obsolete managed config.txt block"
+	fi
+
+	# Warn if custom kernel= still overrides the firmware defaults.
+	if grep -E '^[[:space:]]*kernel=' "$CONFIG" >/dev/null 2>&1; then
+		echo "zz-clockworkpi-rpi-firmware: warning: config.txt still has kernel= lines;" >&2
+		echo "zz-clockworkpi-rpi-firmware: remove them to boot kernel_2712.img / kernel8.img by default." >&2
+	fi
+fi
+
+echo "zz-clockworkpi-rpi-firmware: installed kernel_2712.img / kernel8.img (config.txt not modified)"
+exit 0
