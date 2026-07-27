@@ -85,76 +85,76 @@ jobs:
           if-no-files-found: error
 
       # Avoid overwriting the public Pages site from arbitrary topic branches.
-      - name: Prepare GitHub Pages bundle
-        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
-        env:
-          KERNELRELEASE: ${{ env.KERNELRELEASE }}
-        run: |
-          set -euo pipefail
-          ARCHIVE="kernel-clockworkpi-${KERNELRELEASE}.tar.xz"
-          PAGES="${GITHUB_WORKSPACE}/pages"
-          mkdir -p "${PAGES}"
-          cp "${GITHUB_WORKSPACE}/${ARCHIVE}" "${PAGES}/"
-          python3 << 'PY'
-          import html
-          import os
-          from datetime import datetime, timezone
+  #     - name: Prepare GitHub Pages bundle
+  #       if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+  #       env:
+  #         KERNELRELEASE: ${{ env.KERNELRELEASE }}
+  #       run: |
+  #         set -euo pipefail
+  #         ARCHIVE="kernel-clockworkpi-${KERNELRELEASE}.tar.xz"
+  #         PAGES="${GITHUB_WORKSPACE}/pages"
+  #         mkdir -p "${PAGES}"
+  #         cp "${GITHUB_WORKSPACE}/${ARCHIVE}" "${PAGES}/"
+  #         python3 << 'PY'
+  #         import html
+  #         import os
+  #         from datetime import datetime, timezone
 
-          kernel = os.environ["KERNELRELEASE"]
-          archive = f"kernel-clockworkpi-{kernel}.tar.xz"
-          owner = os.environ["GITHUB_REPOSITORY_OWNER"]
-          source_url = os.environ["GITHUB_REPOSITORY"]
-          repo = os.environ["GITHUB_REPOSITORY"].split("/", 1)[1]
-          base = f"https://{owner}.github.io/{repo}"
-          full_url = f"{base}/{archive}"
-          updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-          run_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ["GITHUB_REPOSITORY"] + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]
+  #         kernel = os.environ["KERNELRELEASE"]
+  #         archive = f"kernel-clockworkpi-{kernel}.tar.xz"
+  #         owner = os.environ["GITHUB_REPOSITORY_OWNER"]
+  #         source_url = os.environ["GITHUB_REPOSITORY"]
+  #         repo = os.environ["GITHUB_REPOSITORY"].split("/", 1)[1]
+  #         base = f"https://{owner}.github.io/{repo}"
+  #         full_url = f"{base}/{archive}"
+  #         updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+  #         run_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ["GITHUB_REPOSITORY"] + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]
 
-          doc = f"""<!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Kernel build {html.escape(kernel)}</title>
-            <style>
-              body {{ font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }}
-              code {{ background: #f0f0f0; padding: 0.12em 0.35em; border-radius: 4px; }}
-              a {{ color: #0969da; }}
-            </style>
-          </head>
-          <body>
-            <h1>Raspberry Pi Kernel for uConsole CM4/CM5</h1>
-            <p><strong>Last updated:</strong> {html.escape(updated)}</p>
-            <p><strong>Kernel release:</strong> <code>{html.escape(kernel)}</code></p>
-            <p><strong>Download:</strong> <a href="{html.escape(archive)}">{html.escape(archive)}</a></p>
-            <p><strong>Source code:</strong> <a href="{html.escape(source_url)}">{html.escape(source_url)}</a></p>
-            <p><strong>Workflow run:</strong> <a href="{html.escape(run_url)}">{html.escape(run_url)}</a></p>
-          </body>
-          </html>
-          """
-          pages = os.environ["GITHUB_WORKSPACE"] + "/pages"
-          os.makedirs(pages, exist_ok=True)
-          with open(os.path.join(pages, "index.html"), "w", encoding="utf-8") as f:
-              f.write(doc)
-          PY
+  #         doc = f"""<!DOCTYPE html>
+  #         <html lang="en">
+  #         <head>
+  #           <meta charset="utf-8">
+  #           <meta name="viewport" content="width=device-width, initial-scale=1">
+  #           <title>Kernel build {html.escape(kernel)}</title>
+  #           <style>
+  #             body {{ font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }}
+  #             code {{ background: #f0f0f0; padding: 0.12em 0.35em; border-radius: 4px; }}
+  #             a {{ color: #0969da; }}
+  #           </style>
+  #         </head>
+  #         <body>
+  #           <h1>Raspberry Pi Kernel for uConsole CM4/CM5</h1>
+  #           <p><strong>Last updated:</strong> {html.escape(updated)}</p>
+  #           <p><strong>Kernel release:</strong> <code>{html.escape(kernel)}</code></p>
+  #           <p><strong>Download:</strong> <a href="{html.escape(archive)}">{html.escape(archive)}</a></p>
+  #           <p><strong>Source code:</strong> <a href="{html.escape(source_url)}">{html.escape(source_url)}</a></p>
+  #           <p><strong>Workflow run:</strong> <a href="{html.escape(run_url)}">{html.escape(run_url)}</a></p>
+  #         </body>
+  #         </html>
+  #         """
+  #         pages = os.environ["GITHUB_WORKSPACE"] + "/pages"
+  #         os.makedirs(pages, exist_ok=True)
+  #         with open(os.path.join(pages, "index.html"), "w", encoding="utf-8") as f:
+  #             f.write(doc)
+  #         PY
 
-      - name: Upload Pages artifact
-        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: pages
+  #     - name: Upload Pages artifact
+  #       if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+  #       uses: actions/upload-pages-artifact@v4
+  #       with:
+  #         path: pages
 
-  deploy:
-    needs: build
-    if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: github-pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+  # deploy:
+  #   needs: build
+  #   if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.1.y-live'
+  #   runs-on: ubuntu-latest
+  #   concurrency:
+  #     group: github-pages
+  #     cancel-in-progress: false
+  #   environment:
+  #     name: github-pages
+  #     url: ${{ steps.deployment.outputs.page_url }}
+  #   steps:
+  #     - name: Deploy to GitHub Pages
+  #       id: deployment
+  #       uses: actions/deploy-pages@v5
