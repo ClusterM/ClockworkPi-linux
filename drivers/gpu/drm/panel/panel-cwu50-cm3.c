@@ -502,9 +502,10 @@ static int cwu50_probe(struct mipi_dsi_device *dsi)
 	struct cwu50 *ctx;
 	int err;
 
-	ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
-		return -ENOMEM;
+	ctx = devm_drm_panel_alloc(dev, struct cwu50, panel,
+				   &cwu50_drm_funcs, DRM_MODE_CONNECTOR_DSI);
+	if (IS_ERR(ctx))
+		return PTR_ERR(ctx);
 
 	mipi_dsi_set_drvdata(dsi, ctx);
 	ctx->dev = dev;
@@ -540,8 +541,6 @@ static int cwu50_probe(struct mipi_dsi_device *dsi)
 	}
 
 	ctx->panel.prepare_prev_first = true;
-
-	drm_panel_init(&ctx->panel, dev, &cwu50_drm_funcs, DRM_MODE_CONNECTOR_DSI);
 
 	err = drm_panel_of_backlight(&ctx->panel);
 	if (err)
