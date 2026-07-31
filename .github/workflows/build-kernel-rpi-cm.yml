@@ -96,21 +96,24 @@ jobs:
             \) -exec mv -t "${GITHUB_WORKSPACE}/debs/" {} +
           ls -lh "${GITHUB_WORKSPACE}/debs/"
 
-      - name: Inject firmware hooks into linux-image
-        run: |
-          set -euo pipefail
-          img_deb="$(ls "${GITHUB_WORKSPACE}/debs"/linux-image-"${KERNELRELEASE}"_*.deb)"
-          "${GITHUB_WORKSPACE}/.github/scripts/inject-kernel-hooks.sh" \
-            "${img_deb}" \
-            "${GITHUB_WORKSPACE}/.github/kernel-hooks"
-
       - name: Build linux-image-clockworkpi metapackage
         run: |
           set -euo pipefail
+          # Hooks ship in the metapackage (stable name), not in versioned
+          # linux-image-<release> debs — those must remain co-installable.
+          PREV="${GITHUB_WORKSPACE}/prev-apt"
+          mkdir -p "${PREV}"
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          APT_BASE="https://${OWNER}.github.io/${REPO_NAME}/apt"
+          # Best-effort: learn old image package names for Replaces (hook takeover).
+          "${GITHUB_WORKSPACE}/.github/scripts/fetch-apt-pool.sh" "${APT_BASE}" "${PREV}" || true
           "${GITHUB_WORKSPACE}/.github/scripts/build-meta-package.sh" \
             "${KERNELRELEASE}" \
             "${{ github.run_number }}" \
-            "${GITHUB_WORKSPACE}/debs"
+            "${GITHUB_WORKSPACE}/debs" \
+            "${GITHUB_WORKSPACE}/.github/kernel-hooks" \
+            "${PREV}"
           ls -lh "${GITHUB_WORKSPACE}/debs/"
 
       - name: Upload deb artifacts
@@ -141,6 +144,7 @@ jobs:
           OWNER="${GITHUB_REPOSITORY_OWNER}"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           APT_BASE="https://${OWNER}.github.io/${REPO_NAME}/apt"
+          # Re-fetch if the metapackage step did not (e.g. empty cache); merge into pool.
           "${GITHUB_WORKSPACE}/.github/scripts/fetch-apt-pool.sh" "${APT_BASE}" "${PREV}" || true
 
           "${GITHUB_WORKSPACE}/.github/scripts/publish-apt-repo.sh" \
