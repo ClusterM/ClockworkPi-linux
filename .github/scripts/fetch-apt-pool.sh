@@ -26,6 +26,10 @@ fi
 echo "Fetching previous APT pool from $base"
 mkdir -p "$dest"
 
+# Keep the index for Replaces discovery even if individual debs are pruned later.
+mkdir -p "$dest/dists/stable/main/binary-arm64"
+cp "$tmp" "$dest/dists/stable/main/binary-arm64/Packages"
+
 # Filenames in Packages are relative to the apt root (e.g. pool/main/...)
 while IFS= read -r rel; do
 	[[ -z "$rel" ]] && continue
