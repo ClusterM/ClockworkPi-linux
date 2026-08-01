@@ -158,11 +158,11 @@
 		};
 	};
 
-	// 96-99 handles i2c bus selection
+	// 96-99 handles i2c bus selection (default: hardware i2c0 on GPIO0/1)
 
 	fragment@96 {
 		target-path = "/";
-		__overlay__ {
+		__dormant__ {
 			i2c_uconsole_sw: i2c@100 {
 				reg = <100>;
 				compatible = "i2c-gpio";
@@ -178,21 +178,21 @@
 
 	fragment@97 {
 		target = <&i2c0>;
-		i2c_uconsole_hw0: __dormant__ {
+		i2c_uconsole_hw0: __overlay__ {
 			status = "okay";
 		};
 	};
 
 	fragment@98 {
 		target = <&i2c0if>;
-		__dormant__ {
+		__overlay__ {
 			status = "okay";
 		};
 	};
 
 	fragment@99 {
 		target = <&i2c0mux>;
-		__dormant__ {
+		__overlay__ {
 			status = "okay";
 		};
 	};
@@ -201,7 +201,7 @@
 	// since we use i2c selection, pmu fragment's target should be editable
 	frag_pmu: fragment@101 {
 		/* PMU */
-		target = <&i2c_uconsole_sw>;
+		target = <&i2c_uconsole_hw0>;
 		__overlay__ {
 			axp22x: pmic@34 {
 				interrupt-controller;
@@ -354,8 +354,12 @@
 				<&reg_eldo1>, "regulator-always-on!",
 				<&reg_eldo2>, "regulator-always-on!",
 				<&reg_eldo3>, "regulator-always-on!";
-		hwi2c = <0>, "-96+97+98+99", // disable SW i2c, enable HW i2c0
-				<&frag_pmu>, "target:0=",<&i2c_uconsole_hw0>; // move PMU from sw i2c(3) to hw i2c0
+		/* Default is hardware i2c0; keep hwi2c as a no-op for old config.txt */
+		hwi2c = <0>, "-96+97+98+99",
+				<&frag_pmu>, "target:0=",<&i2c_uconsole_hw0>;
+		/* Optional bitbang fallback on GPIO0/1 */
+		swi2c = <0>, "+96-97-98-99",
+				<&frag_pmu>, "target:0=",<&i2c_uconsole_sw>;
 	};
 };
 
