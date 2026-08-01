@@ -1,22 +1,21 @@
 /dts-v1/;
 /plugin/;
 
-#include <dt-bindings/gpio/gpio.h>
-
 / {
 	compatible = "brcm,bcm2835";
+
+	/*
+	 * AXP PMIC on hardware I2C0 (RP1 GPIO0/1). Avoid i2c-gpio: RP1 strict
+	 * pinmux rejects GPIO claims on pins muxed as i2c0.
+	 */
 	fragment@0 {
 		target = <&i2c0>;
 		__overlay__ {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "i2c-gpio";
-			reg = <3>;
-			pinctrl-0 = <&i2c0_pins>;
 			pinctrl-names = "default";
-			gpios = <&rp1_gpio 0 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)
-					&rp1_gpio 1 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
-			i2c-gpio,delay-us = <2>;
+			pinctrl-0 = <&rp1_i2c0_0_1>;
+			clock-frequency = <100000>;
 			status = "okay";
 			axp22x: pmic@34 {
 				interrupt-controller;

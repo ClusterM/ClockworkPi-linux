@@ -1,25 +1,26 @@
 /dts-v1/;
 /plugin/;
 
-#include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/clock/rp1.h>
-
 
 / {
 	compatible = "brcm,bcm2835";
+
+	/*
+	 * AXP PMIC on hardware I2C0 (RP1 GPIO0/1 = SDA/SCL).
+	 * Do not use i2c-gpio here: with RP1 strict pinmux, requesting those
+	 * pins as GPIO while muxed as i2c0 fails, so the PMIC never probes.
+	 */
 	fragment@0 {
 		target = <&i2c0>;
 		__overlay__ {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "i2c-gpio";
-			reg = <3>;
-			pinctrl-0 = <&i2c0_pins>;
 			pinctrl-names = "default";
-			gpios = <&rp1_gpio 0 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)
-					&rp1_gpio 1 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
-			i2c-gpio,delay-us = <2>;
+			pinctrl-0 = <&rp1_i2c0_0_1>;
+			clock-frequency = <100000>;
 			status = "okay";
+
 			axp22x: pmic@34 {
 				interrupt-controller;
 				#interrupt-cells = <1>;
@@ -134,15 +135,11 @@
 	__overrides__ {
 		energy_full_design_uwh = <&battery>, "energy-full-design-microwatt-hours:0";
 		charge_full_design_uah = <&battery>, "charge-full-design-microamp-hours:0";
-	};	
-	fragment@2 {
-		target = <&i2c1>;
-		__overlay__ {
-			status = "okay";
-			pinctrl-0 = <&rp1_i2c1_2_3>;
-			clock-frequency = <100000>;
-		};
 	};
+	/*
+	 * Do not enable i2c1 on rp1_i2c1_2_3 here: GPIO2 is the AXP IRQ line.
+	 * Claiming those pins as i2c1 breaks the PMIC under strict pinmux.
+	 */
 	fragment@3 {
 		target-path = "/";
 		__overlay__ {
