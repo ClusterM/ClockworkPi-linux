@@ -51,19 +51,40 @@ mkdir -p "$work/${pkg_name}/DEBIAN"
 # Take over hook paths previously shipped inside versioned linux-image-* packages.
 # Replaces without Conflicts allows overwriting those files while keeping old
 # kernels installed for rollback.
-replaces=""
-if [[ -n "$prev_apt" && -d "$prev_apt" ]]; then
-	replaces="$(
-		{
+#
+# Sources (merged, unique):
+#   1) current Depends target (always)
+#   2) static historical list next to hooks (packages dropped from the index)
+#   3) Package: names from any Packages index under prev-apt
+#   4) Package fields from linux-image-*.deb under prev-apt
+replaces_file=""
+if [[ -n "$hooks_dir" && -f "$hooks_dir/replaces-images.list" ]]; then
+	replaces_file="$hooks_dir/replaces-images.list"
+fi
+
+replaces="$(
+	{
+		echo "$depends"
+		if [[ -n "$replaces_file" ]]; then
+			awk '!/^#/ && NF { print $1 }' "$replaces_file"
+		fi
+		if [[ -n "$prev_apt" && -d "$prev_apt" ]]; then
+			find "$prev_apt" -type f \( -name Packages -o -name Packages.gz \) -print0 2>/dev/null \
+				| while IFS= read -r -d '' idx; do
+					case "$idx" in
+					*.gz) gzip -dc "$idx" ;;
+					*) cat "$idx" ;;
+					esac
+				done | awk '/^Package: linux-image-/ { print $2 }'
 			find "$prev_apt" -type f -name 'linux-image-*.deb' -print0 2>/dev/null \
 				| while IFS= read -r -d '' deb; do
 					dpkg-deb -f "$deb" Package
 				done
-		} | awk -v meta="$pkg_name" '$0 != meta && $0 ~ /^linux-image-/ { print }' \
-			| LC_ALL=C sort -u \
-			| paste -sd, - || true
-	)"
-fi
+		fi
+	} | awk -v meta="$pkg_name" '$0 != meta && $0 ~ /^linux-image-/ { print }' \
+		| LC_ALL=C sort -u \
+		| paste -sd, - || true
+)"
 
 control_extra=""
 if [[ -n "$replaces" ]]; then
