@@ -1258,8 +1258,14 @@ static int axp20x_power_off(struct sys_off_data *data)
 
 	regmap_write(axp20x->regmap, shutdown_reg, AXP20X_OFF);
 
-	/* Give capacitors etc. time to drain to avoid kernel panic msg. */
-	mdelay(500);
+	/*
+	 * Give capacitors etc. time to drain to avoid kernel panic msg.
+	 * Runs from POWER_OFF_PREPARE (blocking), so sleeping is OK — and
+	 * required: the final POWER_OFF stage has IRQs off, so an I2C/regmap
+	 * write there cannot complete on controllers without atomic xfer
+	 * (e.g. RP1 DesignWare), leaving PSCI to halt CPUs with rails up.
+	 */
+	msleep(500);
 
 	return NOTIFY_DONE;
 }
@@ -1461,8 +1467,20 @@ int axp20x_device_probe(struct axp20x_dev *axp20x)
 		return ret;
 	}
 
-	if (axp20x->variant != AXP288_ID)
-		devm_register_power_off_handler(axp20x->dev, axp20x_power_off, axp20x);
+	if (axp20x->variant != AXP288_ID) {
+		/*
+		 * Must be PREPARE (not atomic POWER_OFF): writing AXP20X_OFF_CTRL
+		 * goes over I2C/regmap and may sleep. Same approach as rk8xx.
+		 */
+		ret = devm_register_sys_off_handler(axp20x->dev,
+						    SYS_OFF_MODE_POWER_OFF_PREPARE,
+						    SYS_OFF_PRIO_HIGH,
+						    axp20x_power_off, axp20x);
+		if (ret)
+			dev_warn(axp20x->dev,
+				 "failed to register power-off handler: %d\n",
+				 ret);
+	}
 
 	dev_info(axp20x->dev, "AXP20X driver loaded\n");
 
