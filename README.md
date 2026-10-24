@@ -98,7 +98,7 @@ GitHub Actions cross-builds an **arm64** kernel (`bcm2712_defconfig` + 4K pages)
 - `linux-headers-<release>-clockworkpi` — headers for out-of-tree modules
 - `linux-image-clockworkpi` — **metapackage** that always depends on the latest image (so `apt upgrade` works)
 
-Successful runs on branch **`clockworkpi-7.2.y-live`** (or manual **workflow_dispatch**) publish a signed **APT repository** on GitHub Pages and attach the same `.deb` files to a GitHub Release.
+Successful runs on branch **`clockworkpi-7.2.y-live`** (or manual **workflow_dispatch**) publish a signed **APT repository** and a **kernel tarball** (image, modules, device trees) on GitHub Pages, and attach the `.deb` files to a GitHub Release.
 
 | What | URL |
 |------|-----|
@@ -129,6 +129,25 @@ sudo reboot
 ```
 
 Keep your ClockworkPi **`dtoverlay=`** (and other hardware) lines in `/boot/firmware/config.txt`. The package does **not** edit that file for boot selection.
+
+### Manual tarball (kernel, modules, device trees)
+
+The same Pages site also links **`kernel-clockworkpi-<release>.tar.xz`**: gzip kernel image, `modules/lib/modules/<release>/`, and `dtbs/` (including overlays). The file is also kept as a workflow artifact.
+
+**Warning:** Back up `/boot/firmware`. The module directory name must match `uname -r` after you boot this kernel. Remove any custom `kernel=` lines in `config.txt` so the firmware defaults (`kernel_2712.img` on CM5, `kernel8.img` on CM4) are used.
+
+```sh
+mkdir -p /tmp/k && tar -xJf kernel-clockworkpi-*.tar.xz -C /tmp/k
+sudo cp /tmp/k/kernel-*.img /boot/firmware/kernel_2712.img
+sudo cp /tmp/k/kernel-*.img /boot/firmware/kernel8.img
+KREL=$(basename /tmp/k/modules/lib/modules/*)
+sudo rsync -a /tmp/k/modules/lib/modules/"$KREL"/ /lib/modules/"$KREL"/
+sudo depmod -a "$KREL"
+sudo rsync -a /tmp/k/dtbs/ /boot/firmware/
+sudo reboot
+```
+
+`kernel-*.img` in the archive is **`Image.gz`** (same layout as before the Debian packages). The Raspberry Pi firmware accepts that gzip image under the default `kernel_2712.img` / `kernel8.img` names.
 
 ### What the package does on install
 

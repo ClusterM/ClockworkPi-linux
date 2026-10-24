@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# Write pages/index.html with APT setup instructions.
-# Usage: generate-pages-index.sh <pages-dir> <KERNELRELEASE>
+# Write pages/index.html with a tarball download and APT setup instructions.
+# Usage: generate-pages-index.sh <pages-dir> <KERNELRELEASE> [archive-filename]
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-	echo "usage: $0 <pages-dir> <KERNELRELEASE>" >&2
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+	echo "usage: $0 <pages-dir> <KERNELRELEASE> [archive-filename]" >&2
 	exit 2
 fi
 
 pages_dir="$(readlink -f "$1")"
 kernelrelease="$2"
+archive="${3:-}"
 mkdir -p "$pages_dir"
 
 owner="${GITHUB_REPOSITORY_OWNER:-ClusterM}"
@@ -20,20 +21,27 @@ apt_base="${base}/apt"
 run_url="${GITHUB_SERVER_URL:-https://github.com}/${repo}/actions/runs/${GITHUB_RUN_ID:-0}"
 updated="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
-python3 - "$pages_dir" "$kernelrelease" "$base" "$apt_base" "$repo" "$run_url" "$updated" <<'PY'
+python3 - "$pages_dir" "$kernelrelease" "$base" "$apt_base" "$repo" "$run_url" "$updated" "$archive" <<'PY'
 import html
-import os
 import sys
 from pathlib import Path
 
-pages_dir, kernel, base, apt_base, repo, run_url, updated = sys.argv[1:8]
+pages_dir, kernel, base, apt_base, repo, run_url, updated, archive = sys.argv[1:9]
+
+download = ""
+if archive:
+    download = f"""
+  <h2>Download archive</h2>
+  <p>Kernel image, modules, and device trees (no package manager):</p>
+  <p><a href="{html.escape(archive)}"><code>{html.escape(archive)}</code></a></p>
+"""
 
 doc = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ClockworkPi kernel APT</title>
+  <title>ClockworkPi kernel</title>
   <style>
     body {{ font-family: system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }}
     code, pre {{ background: #f0f0f0; border-radius: 4px; }}
@@ -46,7 +54,7 @@ doc = f"""<!DOCTYPE html>
   <h1>Raspberry Pi Kernel for uConsole CM4/CM5</h1>
   <p><strong>Last updated:</strong> {html.escape(updated)}</p>
   <p><strong>Kernel release:</strong> <code>{html.escape(kernel)}</code></p>
-
+{download}
   <h2>APT repository</h2>
   <p>Add the repository, then install the metapackage:</p>
   <pre>curl -fsSL {html.escape(apt_base)}/key.gpg \\

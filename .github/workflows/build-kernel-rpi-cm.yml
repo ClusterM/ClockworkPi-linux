@@ -1,7 +1,7 @@
 # Build 64-bit Raspberry Pi kernel (bcm2712_defconfig) for CM4/CM5 class boards.
 # Produces linux-image / linux-headers Debian packages, a linux-image-clockworkpi
-# metapackage, and (on the live branch / workflow_dispatch) a signed APT repo on
-# GitHub Pages.
+# metapackage, and a kernel+modules+dtbs tarball.
+# On the live branch / workflow_dispatch: signed APT repo and the tarball on GitHub Pages.
 
 name: Build kernel (RPi CM4/CM5, arm64)
 
@@ -116,11 +116,38 @@ jobs:
             "${PREV}"
           ls -lh "${GITHUB_WORKSPACE}/debs/"
 
+      - name: Pack kernel, modules, and dtbs
+        run: |
+          set -euo pipefail
+          # bindeb-pkg already built Image/modules/dtbs; Image.gz is incremental.
+          make -j"$(nproc)" Image.gz modules dtbs
+          STAGE="${GITHUB_WORKSPACE}/kernel-artifact"
+          mkdir -p "${STAGE}/modules" "${STAGE}/dtbs" "${STAGE}/dtbs/overlays"
+          cp arch/arm64/boot/Image.gz "${STAGE}/kernel-${KERNELRELEASE}.img"
+          # Cross-build: skip host depmod (wrong arch for /sbin/depmod)
+          make INSTALL_MOD_PATH="${STAGE}/modules" INSTALL_MOD_STRIP=1 \
+            modules_install
+          cp arch/arm64/boot/dts/broadcom/*.dtb "${STAGE}/dtbs/"
+          cp arch/arm64/boot/dts/overlays/*.dtb "${STAGE}/dtbs/overlays/"
+          if [[ -f arch/arm64/boot/dts/overlays/README ]]; then
+            cp arch/arm64/boot/dts/overlays/README "${STAGE}/dtbs/overlays/"
+          fi
+          OUT="${GITHUB_WORKSPACE}/kernel-clockworkpi-${KERNELRELEASE}.tar.xz"
+          tar -C "${STAGE}" -cJf "${OUT}" .
+          ls -lh "${OUT}"
+
       - name: Upload deb artifacts
         uses: actions/upload-artifact@v6
         with:
           name: kernel-debs-${{ env.KERNELRELEASE }}
           path: debs/*.deb
+          if-no-files-found: error
+
+      - name: Upload kernel tarball
+        uses: actions/upload-artifact@v6
+        with:
+          name: kernel-clockworkpi-${{ env.KERNELRELEASE }}
+          path: kernel-clockworkpi-${{ env.KERNELRELEASE }}.tar.xz
           if-no-files-found: error
 
       - name: Prepare GitHub Pages APT bundle
@@ -152,9 +179,13 @@ jobs:
             "${GITHUB_WORKSPACE}/debs" \
             "${PREV}"
 
+          ARCHIVE="kernel-clockworkpi-${KERNELRELEASE}.tar.xz"
+          cp "${GITHUB_WORKSPACE}/${ARCHIVE}" "${PAGES}/"
+
           "${GITHUB_WORKSPACE}/.github/scripts/generate-pages-index.sh" \
             "${PAGES}" \
-            "${KERNELRELEASE}"
+            "${KERNELRELEASE}" \
+            "${ARCHIVE}"
 
       - name: Upload Pages artifact
         if: github.event_name == 'workflow_dispatch' || github.ref_name == 'clockworkpi-7.2.y-live'
